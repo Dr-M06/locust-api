@@ -90,6 +90,24 @@ For private VIP rooms:
 - Unlock seat with `POST /rooms/{roomID}/access`
 - On 402, show top-up flow (`/tokens/checkout` for web, RevenueCat for mobile)
 
+### TypeScript SDK (optional)
+
+For web, React, or Expo apps in the monorepo, use **`@niilox/sdk`** (`packages/niilox-sdk/`) instead of hand-rolling fetch + WebSocket wiring:
+
+- **24 modules** on `NiiloxClient` — auth, rooms, **seats** (capped VIP/events), gifts, stage, moderation, payments, gigs, peer, DMs, push, platform, …
+- Realtime: `PersonalSocket`, `RoomSocket`
+- **v0.1 beta** — monorepo `file:` install only; not on npm yet
+
+```ts
+import { createNiiloxClient } from '@niilox/sdk'
+
+const client = createNiiloxClient({ appId: 'myapp', token: jwt })
+const rooms = await client.rooms.list()
+// VIP / seats — contact dev@niilox.com for integration guide
+```
+
+Full module list and install: [SDK README](../../packages/niilox-sdk/README.md) · [Platform status](./PLATFORM_STATUS.md#sdk-niiloxsdk-v01)
+
 ## 5) Realtime events you should handle first
 
 Room channel (`/ws/rooms/{roomID}`):
@@ -97,7 +115,7 @@ Room channel (`/ws/rooms/{roomID}`):
 - `chat`
 - `gift`
 - `presence`
-- `room:seats` (VIP seat count)
+- `room:seats` (VIP seat count — integration guide on request)
 - `end`
 
 Personal channel (`/ws/me`):
@@ -106,7 +124,7 @@ Personal channel (`/ws/me`):
 - `notification:unread`
 - `dm`
 - `dm:typing`
-- `lobby:seats`
+- `lobby:seats` (VIP lobby updates — integration guide on request)
 
 ## 6) Security and privacy guardrails
 
@@ -157,15 +175,10 @@ Backend-to-backend:
 - **Bubble.io (no-code):** [`BUBBLE_IO.md`](./BUBBLE_IO.md)
 - Tenant payments & splits: [`TENANT_BUSINESS.md`](./TENANT_BUSINESS.md)
 - Full endpoint reference: [`API.md`](./API.md)
+- **SDK:** [`packages/niilox-sdk/README.md`](../../packages/niilox-sdk/README.md) (monorepo)
 - Native auth details: [`NATIVE_AUTH.md`](./NATIVE_AUTH.md)
 - Mobile token purchases: [`MOBILE_PAYMENTS.md`](./MOBILE_PAYMENTS.md)
 - Multi-tenant behavior: [`MULTI-TENANT.md`](./MULTI-TENANT.md)
-
-## Important next step (required)
-
-Run the new migration before relying on geo analytics in production:
-
-- `migrations/024_api_usage_daily.sql`
 
 ## 10) Suggested first partner conversation
 
@@ -176,3 +189,5 @@ Use this sequence:
 3. **Proof in production:** `driftin.live` is live on the same backend contract.
 4. **Integration path:** run `/platform/ping`, issue app key, wire auth, then launch one room flow.
 5. **Pilot scope:** one tenant + one client app + one monetization path, then expand.
+
+For database migrations and production ops backlog, see [Platform status](./PLATFORM_STATUS.md) (59 migrations; verify **057** and **059** on prod).

@@ -154,20 +154,9 @@ The two host-side guards run in order — if the tenant flag is off you'll see t
 
 ## Private / VIP rooms
 
-Private rooms are tenant-agnostic — they layer on top of every existing gate without changing tenant isolation. The relevant columns live on `rooms`:
+Private rooms layer on top of every existing gate without changing tenant isolation. Hosts configure pricing and seat caps at go-live; access is enforced server-side.
 
-| Column | Meaning |
-|--------|---------|
-| `rooms.is_private` | When `true`, `POST /rooms/{id}/join` requires a row in `room_access` (host-bypassed). |
-| `rooms.entry_price_tokens` | Per-viewer charge in tokens. `0` is valid ("free + tip-only"). Capped server-side at 10 000. |
-| `rooms.seat_limit` | Max paid viewers; `0` means unlimited. Capped server-side at 500. |
-| `room_access.(room_id, user_id)` | UNIQUE — atomic seat reservation + double-pay shortcut in one constraint. |
-
-The `BuyAccess` handler is one transaction: `SELECT … FOR UPDATE` on the rooms row → seat-cap check → `UPDATE users SET token_balance = token_balance - price` (guarded by `>= price`, so 0 rows ⇒ paywall) → `UPDATE users SET token_balance += hostShare` for the host → `INSERT INTO room_access`. The host's cut uses the same `hostShareBps = 7000` (70 %) basis-points constant the gift split uses, so the platform's take is consistent across every revenue stream.
-
-After commit the hub fans `lobby:seats` out to every signed-in user on `/ws/me`, so lobby cards and open paywall sheets tick "N of M seats left" downward without polling.
-
-Adult ∩ Private is fully supported — both gates stack. A host creating a paid adult room still needs `apps.allow_adult = true` + `users.id_verified = true`; a viewer joining still needs `age_confirmed_at IS NOT NULL` **and** a paid `room_access` row.
+Full transaction semantics and realtime lobby updates are provided to registered developers — contact **dev@niilox.com**.
 
 ## What can't be multi-tenant yet
 

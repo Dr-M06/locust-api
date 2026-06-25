@@ -11,6 +11,25 @@
 
 Every request needs header **`X-App-ID: <your_tenant>`**. User actions use a session JWT; server integrations use **`drift_sk_…`** API keys.
 
+> **Public docs:** Step-by-step flows for VIP access, worker safety, geofence logic, and payment transactions are provided to registered developers. Contact **dev@niilox.com** for the full integration guide.
+
+---
+
+## Platform progress & what's left
+
+**→ [PLATFORM_STATUS.md](./PLATFORM_STATUS.md)** — full stack: Go API, LiveKit, P2P, GeoGig, Rodent, frontends, SDK, migrations, ops backlog.
+
+Quick summary:
+
+| Layer | Status |
+|-------|--------|
+| Go API + Postgres + native auth | **Production** |
+| Drift livestream (LiveKit) | **Production** |
+| GeoGig gigs, identity, safety, P2P video | **Production** |
+| Rodent peer, Drop, bookings | **Production** |
+| `@niilox/sdk` | **v0.1 beta** — 24 TS modules + `seats`; not on npm |
+| npm publish, integration tests, full GeoGig SDK migration | **Left** |
+
 ---
 
 ## Quick start
@@ -39,9 +58,21 @@ curl -s https://api.driftin.live/api/v1/auth/guest \
 
 Full walkthrough → [**Getting started**](./GETTING_STARTED.md) (~15 min).
 
+### Official SDK (`@niilox/sdk` v0.1 beta)
+
+See **[Platform status](./PLATFORM_STATUS.md)** for the full backend + frontends + ops picture.  
+SDK detail: monorepo `packages/niilox-sdk/README.md` (not on npm yet).
+
 ---
 
 ## Documentation
+
+### Platform & SDK
+
+| Guide | For |
+|-------|-----|
+| [**Platform status**](./PLATFORM_STATUS.md) | **Full backend + frontends + what's left** |
+| **SDK** | `@niilox/sdk` v0.1 — 24 modules incl. `seats`, gifts, P2P (monorepo; not on npm) |
 
 ### Start here
 
@@ -63,9 +94,9 @@ Full walkthrough → [**Getting started**](./GETTING_STARTED.md) (~15 min).
 
 | Guide | Tenant | Stack |
 |-------|--------|-------|
-| [**GeoGig**](./GEOGIG.md) | `geogig` | Gigs, geofence, fiat checkout, P2P video, worker safety |
+| [**GeoGig**](./GEOGIG.md) | `geogig` | Gigs, fiat checkout, P2P video, worker safety |
 | [**Peer signaling**](./PEER_SIGNAL.md) | `rodent`, `geogig` | WebRTC ICE + signal — **not LiveKit** |
-| [**Worker safety**](./WORKER_SAFETY.md) | `geogig` (+ others) | Checkout PIN, duress PIN, emergency SMS |
+| [**Worker safety**](./WORKER_SAFETY.md) | `geogig` (+ others) | Field-worker safety — guide on request |
 | Live video, chat, gifts | `drift` | See [API reference](./API.md) — rooms, LiveKit, VIP |
 
 Reference apps: [GeoGig](https://github.com/Dr-M06/geogig) · [Drift](https://driftin.live)

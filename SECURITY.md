@@ -34,7 +34,7 @@ This document is for anyone running Drift in production or considering reselling
 - `payments.handler.handleWebhook` updates `token_purchases` with `WHERE status='pending'` so a replayed webhook never double-credits.
 - The Stripe handler verifies `Stripe-Signature` against `STRIPE_WEBHOOK_SECRET`.
 - The Flutterwave handler verifies `verif-hash` against `FLW_WEBHOOK_HASH` (raw value or SHA-512 hex digest).
-- Token balance updates run inside a transaction with `FOR UPDATE` on `users` row when withdrawing.
+- Token balance updates run inside a transaction when withdrawing.
 
 ### Chargeback / friendly fraud (migration `015`)
 

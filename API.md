@@ -1,5 +1,7 @@
 # API Reference
 
+> **Public docs note:** Transaction semantics, paywall flows, worker safety, geofence logic, and seat-capacity implementation are withheld from this repository. Registered developers receive the full integration guide — contact **dev@niilox.com**.
+
 **Niilox API** (`api.driftin.live`) exposes a single HTTP + WebSocket surface for all tenants (`drift`, `geogig`, `rodent`, and partner apps). Every request that mutates tenant-scoped data carries:
 
 New to the API? Start with [`README.md`](./README.md) → [Getting started](./GETTING_STARTED.md). No-code: [Bubble.io](./BUBBLE_IO.md).
@@ -71,42 +73,16 @@ Access tokens are HS256 JWTs (7-day TTL). Refresh tokens are opaque (30-day TTL,
 | POST | `/rooms/{roomID}/leave` | yes | 204 (the client side closes the LiveKit connection). |
 | GET | `/rooms/{roomID}/presence` | yes | `{count, viewers:[{user_id, username, avatar_url}]}` snapshot. |
 | GET | `/rooms/{roomID}/access` | yes | VIP paywall snapshot — see **Private VIP rooms** below. Safe on public rooms (returns `has_access=true`, `is_private=false`). |
-| POST | `/rooms/{roomID}/access` | **registered** | Burns tokens, splits 70 % to the host, INSERTs `room_access`. Same `AccessInfo` shape as the GET on success; 402 with the same shape on insufficient balance; 409 when the seat cap is full. Idempotent — already-paid callers get a 200 with `has_access=true` and no double-charge. |
+| POST | `/rooms/{roomID}/access` | **registered** | Grants VIP access (token spend). Returns paywall snapshot on success or when payment is required. Idempotent for callers who already paid. Contact **dev@niilox.com** for full flow documentation. |
 | POST | `/rooms/{roomID}/thumbnail` | **registered, host-only** | Raw JPEG body (`Content-Type: image/jpeg`, max 300 kb). The host's browser captures a frame from the local camera every ~30 s and POSTs it; the API uploads to Bunny at `thumbnails/{room_id}.jpg` (per-tenant zone) and updates `rooms.thumbnail_url` with a cache-busted CDN URL. Returns `{thumbnail_url}`. Lobby list responses include the latest `thumbnail_url` so cards can render a real preview instead of an avatar gradient. |
 
 ### Private VIP rooms
 
-A room flagged `is_private=true` becomes a token-paid room. Hosts set:
+Paid VIP rooms support per-viewer token pricing and optional seat caps. Hosts set `is_private`, `entry_price_tokens`, and `seat_limit` at go-live.
 
-- `entry_price_tokens` — what each viewer pays in tokens (capped at **10 000**, ≈ $200 at the displayed 50 tk/$ rate). `0` is a valid "free + tip-only" tier.
-- `seat_limit` — maximum number of paid viewers; `0` means unlimited.
+Access endpoints return a paywall snapshot (`has_access`, `entry_price_tokens`, `seat_limit`, `seats_taken`, `balance`, etc.). Live lobby counters update over the personal WebSocket.
 
-Both fields are ignored on public rooms (server forces them to `0` regardless of input). `Room` JSON gains `is_private`, `entry_price_tokens`, `seat_limit`, and a live `seats_taken` counter; the lobby list query joins `room_access` in one round-trip so cards can render "3 of 10 seats left" without a second hit.
-
-`POST /rooms/{id}/access` is one transaction:
-
-1. `SELECT … FOR UPDATE` on the rooms row (serialises seat-cap reads).
-2. Seat-cap check.
-3. `UPDATE users SET token_balance = token_balance - price` with a `>= price` guard (atomic; 0 rows ⇒ paywall 402).
-4. `UPDATE users SET token_balance += hostShare` for the host (70 %, basis-points constant shared with the gift split).
-5. `INSERT INTO room_access` (`UNIQUE (room_id, user_id)` keeps double-pays out — repeat calls succeed without re-charging).
-
-All access endpoints share one JSON shape:
-
-```jsonc
-{
-  "has_access": false,           // permanent for the room's lifetime once true
-  "is_private": true,
-  "entry_price_tokens": 250,
-  "seat_limit": 10,              // 0 = unlimited
-  "seats_taken": 3,
-  "balance": 120,                // caller's token balance
-  "is_host": false,              // hosts bypass every gate
-  "error": "payment_required"    // only set on 402
-}
-```
-
-After a successful purchase, the server **fans the new seat count out on `/ws/me` to every signed-in user** (`lobby:seats` event) so lobby cards and open paywall sheets tick "N of M seats left" downward without polling. Listeners already inside the room also still receive `room:seats` on `/ws/rooms/{roomID}`.
+**Implementation details** (transaction semantics, paywall status codes, and realtime events) are provided to registered developers — contact **dev@niilox.com**.
 
 ## Chat
 
@@ -121,7 +97,7 @@ After a successful purchase, the server **fans the new seat count out on `/ws/me
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
 | GET | `/gifts` | — | Static catalog (id, name, emoji, token cost). |
-| POST | `/rooms/{roomID}/gifts` | **registered** | Body: `{"gift_id":"heart"}`. Atomically deducts tokens, credits 70% to the host, writes a `gift_transactions` row, broadcasts a `gift` event. Returns `{gift, balance}`. |
+| POST | `/rooms/{roomID}/gifts` | **registered** | Body: `{"gift_id":"heart"}`. Deducts tokens, credits the host, broadcasts a `gift` event. Returns `{gift, balance}`. |
 | GET | `/users/me/tokens` | **registered** | `{"balance": int}`. |
 
 ## Stage (guest co-hosts)
@@ -176,6 +152,23 @@ A room caps at 4 publishers (1 host + 3 guests).
 | GET | `/notifications` | yes | Paginated feed (`?limit=1..200`, default 50) + `unread_count`. |
 | GET | `/notifications/unread_count` | yes | `{count: int}` only. |
 | POST | `/notifications/read` | yes | Body: `{"all":true}` or `{"ids":["uuid", ...]}`. |
+
+## Push
+
+Web (PWA) and native (iOS/Android) device registration. Sending (`POST /push/send`) requires a tenant API key — not an end-user JWT.
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| GET | `/push/public-key` | — | VAPID public key for web push subscribe (empty when VAPID not configured). |
+| POST | `/me/push/subscribe` | yes | Body: Web Push `PushSubscription` JSON — stores browser endpoint for the caller. |
+| POST | `/me/push/unsubscribe` | yes | Body: `{"endpoint":"..."}` — removes a web subscription. |
+| POST | `/me/push-tokens` | yes | Body: `{"platform":"ios\|android","token":"...","device_id":"..."}` — registers native APNs/FCM token (`getDevicePushTokenAsync`, not Expo push tokens). |
+| DELETE | `/me/push-tokens` | yes | Body: `{"platform":"ios\|android","token":"..."}` — unregisters a native token (e.g. on sign-out). |
+| POST | `/push/send` | **api key** | Server-triggered push to a user (integrator / ops). |
+| GET | `/platform/push/categories` | **developer portal** | List push notification categories for the tenant. |
+| POST | `/platform/push/categories` | **developer portal** | Create or update a category slug + default payload template. |
+
+SDK: `client.push` (subscribe, native token register). Category admin is portal-only today.
 
 ## Platform (B2B API keys)
 
@@ -248,7 +241,7 @@ Local chore/help listings for the [GeoGig](https://github.com/Dr-M06/geogig) mob
 | GET | `/gigs` | — | Open gigs. `?category=`, `?sort=price_asc\|price_desc\|distance\|starts_at`, `?lat=&lng=&radius_m=` optional. |
 | GET | `/gigs/{id}` | — | Single gig (includes `payment_status`: `none\|pending\|paid\|released`). |
 | GET | `/gigs/mine` | **registered** | Caller’s posted or accepted gigs. `?role=posted\|accepted\|all`, `?view=active\|history`, `?status=` optional. |
-| POST | `/gigs` | **registered** | Post a gig. Requires poster identity verification. Body: `{"category","title","summary","price":25,"price_unit":"total\|hr\|visit","lat"?,"lng"?,"geofence_radius_m"?,"walk_radius_m"?,"starts_at_ts"?,"ends_at_ts"?,"urgent"?,"food_type"?,"allergies"?}`. |
+| POST | `/gigs` | **registered** | Post a gig. Requires poster identity verification. Body includes category, title, summary, price, optional location fields, and scheduling. |
 | PUT | `/gigs/{id}` | **registered** | Poster edits an open gig. |
 | DELETE | `/gigs/{id}` | **registered** | Poster cancels/deletes when allowed by lifecycle rules. |
 | POST | `/gigs/{id}/accept` | **registered** | Accept an open gig (cannot accept your own). Requires worker identity verification. |
@@ -257,11 +250,11 @@ Local chore/help listings for the [GeoGig](https://github.com/Dr-M06/geogig) mob
 | POST | `/gigs/{id}/dispute` | **registered** | Open a dispute on an active/completed gig. |
 | POST | `/gigs/{id}/image` | **registered** | `multipart/form-data` gig photo (JPEG/PNG/WebP). |
 | POST | `/gigs/{id}/video-call` | **registered** | Ring the other party for P2P video glance (uses peer signaling, not LiveKit). |
-| GET | `/gigs/{id}/session` | **registered** | Live session: check-in/out times, last worker location, geofence radii, `in_geofence`, `tracking_active`. |
+| GET | `/gigs/{id}/session` | **registered** | Live session state (check-in/out, location trust). |
 | GET | `/gigs/{id}/location-trail` | **registered** | Worker location history for the session (poster view). |
-| POST | `/gigs/{id}/location` | **registered** | Worker GPS ping while gig is accepted (or silent tracking after duress checkout). Rate-limited to one ping per 15 s. |
-| POST | `/gigs/{id}/check-in` | **registered** | Worker manual check-in. Requires `payment_status=paid` when `price_cents ≥ 50`. Optional body `{"lat","lng"}`. |
-| POST | `/gigs/{id}/check-out` | **registered** | Worker check-out. Body `{"lat"?,"lng"?,"pin"?}`. When worker safety PINs are configured, `pin` is required — see **Worker safety** below. |
+| POST | `/gigs/{id}/location` | **registered** | Worker GPS ping while gig is accepted. Rate-limited. |
+| POST | `/gigs/{id}/check-in` | **registered** | Worker manual check-in. Requires paid status when price applies. Optional body `{"lat","lng"}`. |
+| POST | `/gigs/{id}/check-out` | **registered** | Worker check-out. Optional body `{"lat"?,"lng"?,"pin"?}`. See **Worker safety** below. |
 | GET | `/gigs/{id}/review-pending` | **registered** | Whether caller can review the other party; includes reviewee reputation snapshot. |
 | POST | `/gigs/{id}/review` | **registered** | Body `{"stars":1-5,"comment"?}`. One review per user per gig. |
 | GET | `/gigs/users/{userId}/rating` | — | `{"user_id","average","count"}` aggregate for Geo-Gig reviews received. |
@@ -283,29 +276,20 @@ Local chore/help listings for the [GeoGig](https://github.com/Dr-M06/geogig) mob
 
 | Event | Payload | When |
 |-------|---------|------|
-| `gig:checked_in` | `{gig_id, worker_id, lat?, lng?}` | Worker enters geofence or taps check-in |
-| `gig:checked_out` | same | Worker leaves geofence or taps check-out |
-| `gig:location` | same | Worker location ping (foreground/background) |
-| `gig:geofence_alert` | same | Dog walk exceeds `walk_radius_m` from home anchor |
+| `gig:checked_in` | `{gig_id, worker_id, lat?, lng?}` | Worker checks in |
+| `gig:checked_out` | same | Worker checks out |
+| `gig:location` | same | Worker location ping |
+| `gig:geofence_alert` | same | Location trust alert |
 
-Bell notification kinds for the poster: `gig_check_in`, `gig_check_out`, `gig_geofence_alert` (`data.gig_id`, `data.title`).
+Bell notification kinds for the poster include check-in, check-out, and location alerts (`data.gig_id`, `data.title`).
 
 Auth uses standard native endpoints — Google with `portal: "geogig"`, phone OTP (`/auth/phone/*`), password, Apple. Web Google finish URL: `{GEOGIG_APP_URL}/auth/finish?token=…`.
 
 ## Worker safety (all tenants; GeoGig first)
 
-Checkout PIN, duress PIN, and emergency SMS contacts. Full guide: [WORKER_SAFETY.md](./WORKER_SAFETY.md).
+Field-worker safety for gig apps — checkout verification, emergency contacts, and location trust.
 
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| GET | `/safety/me` | **registered** | Settings (`enabled`, `checkout_grace_minutes`) + emergency contacts. |
-| PUT | `/safety/me` | **registered** | Body `{"enabled"?,"checkout_grace_minutes"?}` (grace 5–240 min, default 30). |
-| PUT | `/safety/me/pins` | **registered** | Body `{"checkout_pin","duress_pin"}` — 4–8 digits, bcrypt hashed server-side. |
-| POST | `/safety/me/contacts` | **registered** | Body `{"name","phone_e164","relationship"?,"sort_order"?}`. |
-| PUT | `/safety/me/contacts/{id}` | **registered** | Update a contact. |
-| DELETE | `/safety/me/contacts/{id}` | **registered** | Remove a contact. |
-
-GeoGig binds safety into `POST /gigs/{id}/check-out` via optional `pin`. Duress PIN returns the same success response as a normal checkout while silently alerting contacts and continuing location tracking.
+Public documentation intentionally omits implementation detail. Registered developers receive the full integration guide — contact **dev@niilox.com**. See [WORKER_SAFETY.md](./WORKER_SAFETY.md).
 
 ## Rodent paid bookings (`X-App-ID: rodent`)
 
@@ -422,8 +406,7 @@ Online / offline events fire only for the peer set returned by `social.PeersToNo
 | ID verification doc / selfie | 8 MB each (JPEG/PNG/WebP/PDF) |
 | Stage capacity | 4 publishers (1 host + 3 guests) |
 | Withdrawal minimum | 100 tokens |
-| VIP entry price | 0 – 10 000 tokens (≈ $0 – $200 at 50 tk/$) |
+| VIP entry price | 0 – 10 000 tokens |
 | VIP seat limit | 0 (unlimited) – 500 |
-| VIP host share | 70 % (same `hostShareBps = 7000` constant the gift split uses) |
 | Live notification dedupe | 30 min (live), 24 h (follow) |
 | Followers fan-out cap on go-live | 5000 |

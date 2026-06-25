@@ -108,4 +108,5 @@ Follow [**Bubble.io integration**](./BUBBLE_IO.md) — API Connector setup, auth
 
 - Full wiring checklist: [WIRING_CHECKLIST.md](./WIRING_CHECKLIST.md)  
 - GeoGig reference app: [GEOGIG.md](./GEOGIG.md)  
-- Endpoint reference: [API.md](./API.md)
+- Endpoint reference: [API.md](./API.md)  
+- TypeScript SDK (monorepo): [packages/niilox-sdk/README.md](../../packages/niilox-sdk/README.md)

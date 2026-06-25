@@ -7,13 +7,13 @@
 | Area | Transport | Notes |
 |------|-----------|-------|
 | Auth | REST | Google (web + native), Apple, password, magic link, **phone SMS OTP** |
-| Gigs & sessions | REST + `/ws/me` | Post, accept, geofence check-in/out, reviews |
-| Payments | REST + webhooks | Stripe / Flutterwave gig checkout (`POST /payments/fiat/gig`) |
+| Gigs & sessions | REST + `/ws/me` | Post, accept, check-in/out, reviews |
+| Payments | REST + webhooks | Fiat gig checkout |
 | DMs & social | REST + `/ws/me` | Peer chat between poster and worker |
-| P2P video glance | Rodent peer API | `POST /gigs/{id}/video-call` + `/peer/ice` — **not LiveKit** |
-| Worker safety | REST | Checkout PIN, duress PIN, emergency contacts — see [WORKER_SAFETY.md](./WORKER_SAFETY.md) |
+| P2P video glance | Rodent peer API | P2P video for gigs — **not LiveKit** |
+| Worker safety | REST | Field-worker safety — contact **dev@niilox.com** |
 | Identity & trust | REST | Bank-verified display name, CV upload, verification country |
-| Push | Native routes | Expo push tokens via `/push/native/*` |
+| Push | Native + web | `POST/DELETE /me/push-tokens` (APNs/FCM); web VAPID via `/me/push/subscribe` — SDK `push` |
 
 LiveKit rooms (`/rooms/*`) are **not** used by GeoGig.
 
@@ -64,39 +64,50 @@ Returns `{token, refresh_token, user_id}` — same shape as magic link verify.
 
 ## Gigs flow
 
-1. **Poster** completes identity verification → `POST /gigs` with category, price, optional geofence (`lat`, `lng`, `geofence_radius_m`).
-2. **Worker** verifies identity → `POST /gigs/{id}/accept`.
-3. **Poster** pays (when `price_cents ≥ 50`) → `POST /payments/fiat/gig` → redirect to Stripe/Flutterwave.
-4. **Worker** checks in (`POST /gigs/{id}/check-in`) — manual or automatic via `POST /gigs/{id}/location` inside geofence.
-5. **Worker** checks out (`POST /gigs/{id}/check-out`) — optional `pin` when worker safety PINs are set.
-6. Both parties review via `POST /gigs/{id}/review`.
+1. **Poster** completes identity verification → posts a gig.
+2. **Worker** verifies identity → accepts.
+3. **Poster** pays when price applies → fiat checkout.
+4. **Worker** checks in and completes the gig.
+5. Both parties review.
 
-List open gigs: `GET /gigs?category=&sort=price_asc|price_desc|distance|starts_at&lat=&lng=&radius_m=`.
+List open gigs: `GET /gigs` with optional category, sort, and location filters.
 
 Categories: `GET /gigs/categories`.
 
+Full lifecycle documentation: **dev@niilox.com**.
+
 ## Realtime (`/ws/me`)
 
-| Event | When |
-|-------|------|
-| `gig:checked_in` | Worker enters geofence or taps check-in |
-| `gig:checked_out` | Worker leaves geofence or taps check-out |
-| `gig:location` | Worker GPS ping |
-| `gig:geofence_alert` | Dog walk exceeds `walk_radius_m` |
-| `dm` / `dm:typing` | Direct messages |
-| `notification` | Bell feed (check-in, safety alerts, etc.) |
+Gig events (check-in, check-out, location, alerts), DMs, and bell notifications are pushed on the personal WebSocket.
 
 Connect: `wss://api.driftin.live/ws/me?token=<access_jwt>`.
 
 ## P2P video glance
 
-GeoGig uses **Rodent-style peer signaling**, not LiveKit:
+GeoGig uses **peer signaling**, not LiveKit. Use the `gigs` and `peer` SDK modules.
 
-1. `GET /peer/ice` with `X-App-ID: geogig` → STUN/TURN servers.
-2. `POST /gigs/{id}/video-call` → notifies the other party (bell + WS).
-3. WebSocket `wss://api.driftin.live/api/v1/peer/signal?app_id=geogig` for SDP/ICE exchange.
+See [PEER_SIGNAL.md](./PEER_SIGNAL.md). Contact **dev@niilox.com** for full examples.
 
-See [PEER_SIGNAL.md](./PEER_SIGNAL.md).
+## Push (native)
+
+GeoGig registers **native APNs/FCM device tokens** (not Expo push tokens) after sign-in:
+
+```http
+POST /api/v1/me/push-tokens
+Authorization: Bearer <jwt>
+X-App-ID: geogig
+
+{"platform":"ios|android","token":"<device_token>","device_id":"ios"}
+```
+
+```http
+DELETE /api/v1/me/push-tokens
+{"platform":"ios|android","token":"<device_token>"}
+```
+
+Requires `APNS_*` and/or `FCM_SERVICE_ACCOUNT_*` on the API host. Notification tap deep links are handled in the app (`geogig://` / Expo Router).
+
+**Not yet:** server fan-out of high-priority `gig_available` pushes when a new gig is posted (workers still rely on in-app WS + manual refresh for fastest-finger).
 
 ## Profile & trust (`/profile/*`)
 
@@ -116,12 +127,7 @@ Bank-verified users display their **bank account name** on profile (not editable
 
 ## Worker safety
 
-See [WORKER_SAFETY.md](./WORKER_SAFETY.md). Summary:
-
-- `GET/PUT /safety/me` — enable safety, grace minutes
-- `PUT /safety/me/pins` — checkout + duress PINs
-- `POST/PUT/DELETE /safety/me/contacts` — emergency contacts (SMS via Africa's Talking)
-- `POST /gigs/{id}/check-out` with `{"pin":"..."}` when PINs are configured
+See [WORKER_SAFETY.md](./WORKER_SAFETY.md). Full integration guide: **dev@niilox.com**.
 
 ## Admin & ops
 

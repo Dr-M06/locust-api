@@ -1,5 +1,7 @@
 # Integration wiring checklist
 
+> **Public docs note:** Step-by-step flows for VIP access, worker safety, geofence check-in, and payment webhooks are withheld from this repository. Contact **dev@niilox.com** for the full integration guide.
+
 Use this before going to production. Check each box in order.
 
 ## Account & tenant
@@ -18,39 +20,37 @@ Use this before going to production. Check each box in order.
 
 Pick one or more:
 
-- [ ] Magic link (`POST /auth/magic/send` → user clicks link → `POST /auth/magic/verify`)  
-- [ ] Google (`POST /auth/google/init` with `portal: "developer"` or your app flow)  
-- [ ] Email + password (`/auth/password/register`, `/auth/password/login`)  
-- [ ] Guest mode for browse-only (`POST /auth/guest`)  
+- [ ] Magic link  
+- [ ] Google  
+- [ ] Email + password  
+- [ ] Guest mode for browse-only  
 
 Storage:
 
 - [ ] Access JWT stored securely (httpOnly cookie or secure storage on mobile)  
-- [ ] Refresh token stored and `POST /auth/refresh` on 401  
-- [ ] Logout calls `POST /auth/logout` when you store refresh tokens  
+- [ ] Refresh token stored and refresh on 401  
+- [ ] Logout revokes refresh tokens when applicable  
 
 ## Core product flows
 
-- [ ] `GET /users/me` after login  
-- [ ] `GET /rooms` lobby  
-- [ ] `POST /rooms` (host go-live) — registered users only  
-- [ ] `POST /rooms/{id}/join` + LiveKit client in your UI  
-- [ ] `GET/POST /rooms/{id}/chat`  
-- [ ] `POST /rooms/{id}/gifts` or fiat gift checkout if using fiat mode  
-- [ ] VIP: `GET/POST /rooms/{id}/access` or `POST /payments/fiat/room-access`  
+- [ ] Profile after login  
+- [ ] Rooms lobby and go-live  
+- [ ] LiveKit join in your UI  
+- [ ] Room chat  
+- [ ] Gifts or fiat checkout (per your payment mode)  
+- [ ] VIP / capped events (if applicable) — see integration guide  
 
 ## Realtime
 
 - [ ] WebSocket reconnect with backoff  
-- [ ] Handle `chat`, `gift`, `presence`, `end` on room socket  
-- [ ] Handle `notification`, `lobby:seats` on `/ws/me` if using VIP lobby  
+- [ ] Handle chat, gift, presence, and end on room socket  
+- [ ] Handle notifications and lobby updates on `/ws/me` if using VIP  
 
 ## Payments
 
-- [ ] [Tenant business](./TENANT_BUSINESS.md) configured (split, mode, packs)  
+- [ ] [Tenant business](./TENANT_BUSINESS.md) configured (mode, packs)  
 - [ ] Stripe Connect `acct_…` if you collect card payments  
-- [ ] Web: `POST /tokens/checkout` or `POST /payments/checkout`  
-- [ ] Fiat VIP/gifts: `POST /payments/fiat/room-access`, `POST /payments/fiat/gift`  
+- [ ] Web and mobile checkout wired per integration guide  
 - [ ] Mobile: RevenueCat — [MOBILE_PAYMENTS.md](./MOBILE_PAYMENTS.md)  
 
 ## Security
@@ -68,5 +68,12 @@ Storage:
 ## Go-live
 
 - [ ] Staging tenant tested end-to-end  
-- [ ] Error handling for 402 (paywall), 403 (banned/suspended), 409 (room full)  
+- [ ] Error handling for paywall, banned/suspended, and capacity errors  
 - [ ] Monitoring on `GET /health` and your own API error rates  
+
+## SDK (optional — TypeScript / Expo)
+
+- [ ] `@niilox/sdk` installed and built  
+- [ ] `createNiiloxClient({ appId, token })` with `X-App-ID` matching your tenant  
+- [ ] VIP / ticketing via `client.seats` — integration guide on request  
+- [ ] See [Platform status](./PLATFORM_STATUS.md#sdk-niiloxsdk-v01)
